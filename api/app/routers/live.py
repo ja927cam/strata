@@ -74,6 +74,7 @@ async def _replace_features(db: AsyncSession, layer: Layer, records: list[dict],
         if record.get("geometry")
     ]
     db.add_all(objects)
+    layer.feature_count = len(objects)
     await db.flush()
     return len(objects)
 

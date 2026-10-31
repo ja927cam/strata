@@ -30,16 +30,21 @@ TileServer GL and Caddy.
 - CRS detection and reprojection to EPSG:4326, invalid-geometry reporting and
   repair without silent data loss.
 - COG raster tiling through the API and WMS proxying.
-- Generic XYZ/TMS, TileJSON, WMS and vector-tile overlays, with WMS
-  capabilities discovery, one-click presets, and Tessera coverage/import/export
-  via the official `geotessera` package.
+- A searchable catalogue of 50+ free XYZ/WMS overlays: OSM styles, outdoor and
+  transport maps, Esri/CARTO basemaps, USGS, GSI Japan, EOX Sentinel-2 and
+  NASA GIBS. WMS capabilities discovery, generic vector tiles, and Tessera
+  coverage/import/export via the official `geotessera` package.
 - Editable local OSM layers imported from Overpass (buildings, landuse, roads,
   waterways, natural features, amenities and boundaries) using the normal
   drawing and attribute editing tools.
-- Live layers for RainViewer weather radar, Open-Meteo weather points and USGS
-  earthquakes.
-- OSM OAuth 2.0 sign-in/linking and a preview/confirm/dry-run workflow that
-  publishes a point feature or attaches its tags to a nearby existing OSM node.
+- Live layers for RainViewer weather radar, Open-Meteo weather points and a
+  keyless GeoJSON feed library including USGS earthquakes, GDACS, NASA EONET,
+  NWS alerts and custom public feeds.
+- OSM OAuth 2.0 sign-in/linking, preview/confirm/dry-run changesets, new nodes,
+  attaching point data to nearby OSM nodes, and tag-only updates to existing
+  OSM ways and relations.
+- Revocable read-only public share links for vector layers, with a standalone
+  map, feature inspection and GeoJSON download.
 - MapLibre UI: layer panel, styling, attribute table, drawing, vertex editing,
   measurement, search, viewport filtering, basemap switcher, exports.
 - Caddy automatic HTTPS when you supply a domain, structured JSON logs, audit
