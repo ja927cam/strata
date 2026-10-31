@@ -416,6 +416,7 @@ export default function LivePage() {
         )}
       </section>
 
+      {canEdit && (
       <section className="panel">
         <div className="panel-head">
           <h2>Live feed library</h2>
@@ -509,6 +510,8 @@ export default function LivePage() {
           </div>
         )}
       </section>
+
+      )}
 
       <p className="hint">
         Weather: Open-Meteo and RainViewer. Earthquakes: USGS. Other feeds: GDACS, NASA EONET and
