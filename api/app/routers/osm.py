@@ -118,7 +118,10 @@ async def _prepare(
             except (TypeError, ValueError):
                 raise HTTPException(status_code=422, detail="Stored osm_id is invalid") from None
     if osm_id:
-        current = await osm_service.fetch_element(osm_type, osm_id)
+        try:
+            current = await osm_service.fetch_element(osm_type, osm_id)
+        except osm_service.OSMError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         if not current:
             raise HTTPException(status_code=404, detail="OSM object no longer exists")
         osm_version = int(current.get("version") or 1)
@@ -463,18 +466,28 @@ async def publish(
     changeset_id: int | None = None
     try:
         if osm_id and (not osm_version or osm_version < 1):
-            current = await osm_service.fetch_element(osm_type, osm_id, access_token)
+            try:
+                current = await osm_service.fetch_element(osm_type, osm_id, access_token)
+            except osm_service.OSMError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
             if not current:
                 raise HTTPException(status_code=404, detail="OSM object no longer exists")
             osm_version = int(current.get("version", 1))
 
         object_current = None
         if osm_type != "node":
-            object_current = await osm_service.fetch_element(
-                osm_type, int(osm_id or 0), access_token
-            )
+            try:
+                object_current = await osm_service.fetch_element(
+                    osm_type, int(osm_id or 0), access_token
+                )
+            except osm_service.OSMError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
             if not object_current:
                 raise HTTPException(status_code=404, detail="OSM object no longer exists")
+            if osm_type == "way" and not object_current.get("nodes"):
+                raise HTTPException(status_code=502, detail="OSM way has no node members")
+            if osm_type == "relation" and not object_current.get("members"):
+                raise HTTPException(status_code=502, detail="OSM relation has no members")
 
         changeset_id = await osm_service.create_changeset(access_token, changeset_xml)
         if osm_type == "node":
