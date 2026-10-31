@@ -47,8 +47,8 @@ async def test_nearby_nodes_endpoint(admin_client, monkeypatch):
 async def test_preview_attaches_to_existing_node(admin_client, monkeypatch):
     feature = await _point_feature(admin_client)
 
-    async def fake_fetch(osm_id, access_token=None):
-        assert osm_id == 42
+    async def fake_fetch(osm_type, osm_id, access_token=None):
+        assert (osm_type, osm_id) == ("node", 42)
         return {
             "type": "node",
             "id": 42,
@@ -58,7 +58,7 @@ async def test_preview_attaches_to_existing_node(admin_client, monkeypatch):
             "tags": {"amenity": "bench", "name": "Old bench"},
         }
 
-    monkeypatch.setattr(osm, "fetch_node", fake_fetch)
+    monkeypatch.setattr(osm, "fetch_element", fake_fetch)
     response = await admin_client.post(
         "/api/v1/osm/preview",
         json={
