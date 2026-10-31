@@ -555,7 +555,7 @@ export default function MapPage() {
           )}
           {selectedFeature &&
             activeLayer &&
-            (selectedFeature.geometry?.type === 'Point' || osmLayer) && (
+            (selectedFeature.geometry?.type === 'Point' || selectedFeature.properties?.osm_id) && (
               <button
                 className="btn btn-primary btn-xs"
                 onClick={() => setOsmFeature(selectedFeature)}
