@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     rainviewer_enabled: bool = True
     rainviewer_metadata_url: str = "https://api.rainviewer.com/public/weather-maps.json"
     open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    open_meteo_air_url: str = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    open_meteo_marine_url: str = "https://marine-api.open-meteo.com/v1/marine"
     usgs_earthquakes_url: str = (
         "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
     )

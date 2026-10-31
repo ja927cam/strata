@@ -319,3 +319,128 @@ def parse_geojson_payload(payload: dict[str, Any]) -> tuple[list[dict[str, Any]]
 async def fetch_geojson_records(url: str) -> list[dict[str, Any]]:
     records, _ = await fetch_geojson_feed(url)
     return records
+
+
+async def _fetch_meteo_grid(
+    url: str,
+    bbox: tuple[float, float, float, float],
+    grid: int,
+    current_fields: str,
+) -> list[dict[str, Any]]:
+    west, south, east, north = bbox
+    size = max(2, min(int(grid or settings.live_grid_points), 6))
+    lats = [
+        round(south + (north - south) * (row + 0.5) / size, 5)
+        for row in range(size)
+        for _ in range(size)
+    ]
+    lons = [
+        round(west + (east - west) * (col + 0.5) / size, 5)
+        for _ in range(size)
+        for col in range(size)
+    ]
+    try:
+        remote.validate_url(url)
+    except remote.UnsafeURLError as exc:
+        raise LiveDataError(str(exc)) from exc
+    params = {
+        "latitude": ",".join(str(value) for value in lats),
+        "longitude": ",".join(str(value) for value in lons),
+        "current": current_fields,
+        "timezone": "UTC",
+    }
+    try:
+        async with httpx.AsyncClient(
+            timeout=30,
+            follow_redirects=False,
+            headers={"User-Agent": "Strata/1.0 (self-hosted live layer)"},
+        ) as client:
+            response = await client.get(url, params=params)
+    except httpx.HTTPError as exc:
+        raise LiveDataError(f"Open-Meteo request failed: {exc}") from exc
+    if response.status_code >= 400:
+        raise LiveDataError(f"Open-Meteo returned HTTP {response.status_code}")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise LiveDataError("Open-Meteo returned invalid JSON") from exc
+    return payload if isinstance(payload, list) else [payload]
+
+
+async def fetch_air_quality_grid(
+    bbox: tuple[float, float, float, float], grid: int | None = None
+) -> list[dict[str, Any]]:
+    items = await _fetch_meteo_grid(
+        settings.open_meteo_air_url,
+        bbox,
+        grid or settings.live_grid_points,
+        "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,ozone,european_aqi",
+    )
+    records: list[dict[str, Any]] = []
+    for item in items:
+        current = item.get("current") or {}
+        lat = item.get("latitude")
+        lon = item.get("longitude")
+        if lat is None or lon is None:
+            continue
+        props = {
+            "name": f"Air quality {float(lat):.3f}, {float(lon):.3f}",
+            "pm10": current.get("pm10"),
+            "pm2_5": current.get("pm2_5"),
+            "carbon_monoxide": current.get("carbon_monoxide"),
+            "nitrogen_dioxide": current.get("nitrogen_dioxide"),
+            "ozone": current.get("ozone"),
+            "european_aqi": current.get("european_aqi"),
+            "observed_at": current.get("time"),
+            "provider": "Open-Meteo air quality",
+        }
+        records.append(
+            {
+                "properties": {key: value for key, value in props.items() if value is not None},
+                "geometry": f"POINT({float(lon)} {float(lat)})",
+            }
+        )
+    if not records:
+        raise LiveDataError("Open-Meteo returned no air-quality points")
+    return records
+
+
+async def fetch_marine_grid(
+    bbox: tuple[float, float, float, float], grid: int | None = None
+) -> list[dict[str, Any]]:
+    items = await _fetch_meteo_grid(
+        settings.open_meteo_marine_url,
+        bbox,
+        grid or settings.live_grid_points,
+        (
+            "wave_height,wave_period,wave_direction,sea_surface_temperature,"
+            "ocean_current_velocity,ocean_current_direction"
+        ),
+    )
+    records: list[dict[str, Any]] = []
+    for item in items:
+        current = item.get("current") or {}
+        lat = item.get("latitude")
+        lon = item.get("longitude")
+        if lat is None or lon is None:
+            continue
+        props = {
+            "name": f"Marine {float(lat):.3f}, {float(lon):.3f}",
+            "wave_height_m": current.get("wave_height"),
+            "wave_period_s": current.get("wave_period"),
+            "wave_direction_deg": current.get("wave_direction"),
+            "sea_temperature_c": current.get("sea_surface_temperature"),
+            "current_velocity_ms": current.get("ocean_current_velocity"),
+            "current_direction_deg": current.get("ocean_current_direction"),
+            "observed_at": current.get("time"),
+            "provider": "Open-Meteo marine",
+        }
+        records.append(
+            {
+                "properties": {key: value for key, value in props.items() if value is not None},
+                "geometry": f"POINT({float(lon)} {float(lat)})",
+            }
+        )
+    if not records:
+        raise LiveDataError("Open-Meteo returned no marine points")
+    return records

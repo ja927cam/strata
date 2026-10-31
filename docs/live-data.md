@@ -19,8 +19,9 @@ not supported" placeholder never appears on the map.
 
 ## Weather points
 
-**Live → Weather points** lets you search for a place or drag an area, then samples
-Open-Meteo current conditions on a 3×3, 4×4 or 5×5 grid. Each point carries:
+**Live → Area point data** lets you search for a place or drag an area, then
+samples Open-Meteo current conditions on a 3×3, 4×4 or 5×5 grid. Choose
+**Weather**, **Air quality** or **Marine**. Weather points carry:
 
 - temperature
 - humidity
@@ -31,9 +32,11 @@ Open-Meteo current conditions on a 3×3, 4×4 or 5×5 grid. Each point carries:
 - WMO weather code and description
 - observation time
 
-Existing weather layers have a **Refresh** button. Refreshing replaces the points
-with a new observation from the same area. Manual edits to a live layer are
-replaced by the next refresh.
+Air-quality points carry PM10, PM2.5, carbon monoxide, nitrogen dioxide, ozone
+and the European AQI. Marine points carry wave height, period, direction,
+sea-surface temperature and ocean current. Existing area layers have a
+**Refresh** button. Refreshing replaces the points with a new observation from
+the same area. Manual edits to a live layer are replaced by the next refresh.
 
 - Attribution: Open-Meteo (CC BY 4.0)
 - Config: `OPEN_METEO_URL`, `LIVE_GRID_POINTS`

@@ -35,6 +35,7 @@ export default function LivePage() {
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [weatherName, setWeatherName] = useState('');
   const [grid, setGrid] = useState(3);
+  const [weatherKind, setWeatherKind] = useState<'weather' | 'air' | 'marine'>('weather');
   const [minMagnitude, setMinMagnitude] = useState(2.5);
   const [quakeName, setQuakeName] = useState('');
   const [catalog, setCatalog] = useState<LiveFeed[]>([]);
@@ -206,20 +207,34 @@ export default function LivePage() {
 
       <section className="panel">
         <div className="panel-head">
-          <h2>Weather points</h2>
+          <h2>Area point data</h2>
           <span className="badge">Open-Meteo</span>
         </div>
         <div className="live-split">
           <div className="stack">
             <GeoSearch onSelect={(box) => setBbox([box[0], box[1], box[2], box[3]])} />
             <Field
-              label="Layer name"
-              help="Weather points are sampled on a grid inside the selected area."
+              label="Data"
+              help="Choose current weather, air quality or marine conditions. All three sample a grid over the selected area."
             >
+              <select
+                value={weatherKind}
+                onChange={(e) => {
+                  const next = e.target.value as typeof weatherKind;
+                  setWeatherKind(next);
+                  setWeatherName('');
+                }}
+              >
+                <option value="weather">Weather</option>
+                <option value="air">Air quality</option>
+                <option value="marine">Marine</option>
+              </select>
+            </Field>
+            <Field label="Layer name" help="Points are sampled on a grid inside the selected area.">
               <input
                 value={weatherName}
                 onChange={(e) => setWeatherName(e.target.value)}
-                placeholder="Weather"
+                placeholder={weatherKind === 'air' ? 'Air quality' : weatherKind === 'marine' ? 'Marine' : 'Weather'}
               />
             </Field>
             <Field label="Grid" help="More points means more detail but a larger request.">
@@ -251,6 +266,7 @@ export default function LivePage() {
                       body: {
                         bbox,
                         grid,
+                        kind: weatherKind,
                         name: weatherName || undefined,
                         visibility: 'private',
                       },
@@ -259,7 +275,9 @@ export default function LivePage() {
                 )
               }
             >
-              {busy === 'weather' ? 'Fetching…' : 'Create weather layer'}
+              {busy === 'weather'
+                ? 'Fetching…'
+                : `Create ${weatherKind === 'air' ? 'air quality' : weatherKind} layer`}
             </button>
             {!bbox && <p className="hint">Choose an area on the map to enable this.</p>}
           </div>

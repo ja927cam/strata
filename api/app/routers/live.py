@@ -38,6 +38,7 @@ class WeatherGridIn(BaseModel):
     visibility: Literal["private", "organisation", "public"] = "private"
     layer_id: str | None = None
     grid: int = Field(default=3, ge=2, le=6)
+    kind: Literal["weather", "air", "marine"] = "weather"
 
 
 class EarthquakeIn(BaseModel):
@@ -185,7 +186,12 @@ async def weather_grid(
     if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
         raise HTTPException(status_code=422, detail="bbox must be west,south,east,north")
     try:
-        records = await live.fetch_weather_grid((west, south, east, north), payload.grid)
+        if payload.kind == "air":
+            records = await live.fetch_air_quality_grid((west, south, east, north), payload.grid)
+        elif payload.kind == "marine":
+            records = await live.fetch_marine_grid((west, south, east, north), payload.grid)
+        else:
+            records = await live.fetch_weather_grid((west, south, east, north), payload.grid)
     except live.LiveDataError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -195,15 +201,20 @@ async def weather_grid(
         await require_write(db, layer, user)
         if layer.geometry_type not in {"point", "geometry"}:
             raise HTTPException(status_code=422, detail="Weather can only update a point layer")
+    labels = {"weather": "Weather", "air": "Air quality", "marine": "Marine"}
+    colors = {"weather": "#0284c7", "air": "#7c3aed", "marine": "#0f766e"}
     if layer is None:
-        name = payload.name.strip() or f"Weather {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        name = payload.name.strip() or (
+            f"{labels[payload.kind]} {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        )
         layer = _new_layer(
             user,
             name,
             payload.visibility,
-            {"color": "#0284c7", "circleRadius": 6},
+            {"color": colors[payload.kind], "circleRadius": 6},
             {
                 "provider": "open-meteo",
+                "parameter_set": payload.kind,
                 "bbox": payload.bbox,
                 "grid": payload.grid,
             },
@@ -216,6 +227,7 @@ async def weather_grid(
     layer.metadata_ = {
         **(layer.metadata_ or {}),
         "provider": "open-meteo",
+        "parameter_set": payload.kind,
         "bbox": payload.bbox,
         "grid": payload.grid,
         "generated_at": datetime.now(UTC).isoformat(),
