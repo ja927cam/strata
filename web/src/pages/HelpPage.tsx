@@ -111,6 +111,15 @@ export default function HelpPage() {
       </section>
 
       <section className="panel">
+        <h2>Sharing data</h2>
+        <p className="muted">
+          Open a layer’s <em>Share</em> dialog to grant named access or create a public
+          read-only link. Public links include the vector features and properties, not photos
+          or attachments, and can be revoked at any time.
+        </p>
+      </section>
+
+      <section className="panel">
         <h2>Publishing to OpenStreetMap</h2>
         <ol className="help-steps">
           <li>

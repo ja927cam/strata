@@ -48,6 +48,7 @@ class PreviewIn(BaseModel):
     osm_id: int | None = Field(default=None, gt=0)
     osm_type: Literal["node"] | None = None
     force_create: bool = False
+    move_node: bool = False
 
 
 class PublishIn(PreviewIn):
@@ -93,8 +94,11 @@ async def _prepare(
         node = await osm_service.fetch_node(osm_id)
         if not node:
             raise HTTPException(status_code=404, detail="OSM node no longer exists")
-        lat = float(node["lat"])
-        lon = float(node["lon"])
+        if payload.move_node:
+            lat, lon = osm_service.parse_lat_lon(geometry)
+        else:
+            lat = float(node["lat"])
+            lon = float(node["lon"])
         osm_version = int(node.get("version") or 1)
         existing_tags = osm_service.clean_tags(node.get("tags") or {})
     else:
@@ -330,8 +334,14 @@ async def preview(
             "uploads are permanent public edits."
             if not osm_id
             else (
-                f"This will update existing OpenStreetMap node {osm_id}. Existing "
-                "OSM tags are kept, the node is not moved, and uploads are permanent."
+                f"This will update existing OpenStreetMap node {osm_id}. Existing OSM tags "
+                "are kept"
+                + (
+                    " and the node will be moved to this feature’s coordinates. "
+                    if payload.move_node
+                    else "; the node is not moved. "
+                )
+                + "Uploads are permanent."
             )
         ),
     }

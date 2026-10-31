@@ -152,6 +152,10 @@ export default function MapPage() {
     [layers, activeLayerId],
   );
   const canWriteGlobally = user?.role === 'admin' || user?.role === 'editor';
+  const osmLayer = Boolean(
+    activeLayer &&
+      (activeLayer.source_type === 'osm' || activeLayer.metadata?.provider === 'osm'),
+  );
   const searchable = Boolean(
     activeLayer &&
       !['raster', 'table'].includes(activeLayer.geometry_type) &&
@@ -195,9 +199,17 @@ export default function MapPage() {
     const label = tool.charAt(0).toUpperCase() + tool.slice(1);
     guideTitle = `Drawing ${label.toLowerCase()}s into ${activeLayer.name}`;
     guideBody = 'Click the map to add. Press Enter to finish, Backspace to undo, or Esc to cancel.';
+  } else if (selectedFeature && osmLayer) {
+    guideTitle = 'Editing an OSM copy';
+    guideBody =
+      'Changes stay local. Review tags, optionally move the node, then use Attach / publish to OSM in the feature panel.';
   } else if (selectedFeature) {
     guideTitle = 'Feature selected';
     guideBody = 'Edit its fields or attachments in the panel. Drag the white handles to reshape it.';
+  } else if (osmLayer) {
+    guideTitle = 'Editing an OSM copy';
+    guideBody =
+      'Select an OSM feature to edit it, or draw a new point. Nothing is uploaded until you publish from the feature panel.';
   } else if (activeLayer.feature_count === 0) {
     guideTitle = 'Your layer is ready to draw';
     guideBody = 'Choose Point, Line or Polygon above, then click the map to add your first feature.';

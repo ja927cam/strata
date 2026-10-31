@@ -38,6 +38,19 @@ replaced by the next refresh.
 - Attribution: Open-Meteo (CC BY 4.0)
 - Config: `OPEN_METEO_URL`, `LIVE_GRID_POINTS`
 
+## Live feed library
+
+The **Live** page includes a catalogue of keyless public feeds. One-click
+GeoJSON sources include GDACS disasters, NASA EONET natural events, US National
+Weather Service alerts and USGS earthquakes. The catalogue also shows weather
+radar and Open-Meteo weather points.
+
+For any other public GeoJSON `FeatureCollection`, use **Add a custom GeoJSON
+feed**. Strata stores a snapshot and the Refresh action replaces it with the
+latest response. The source URL, attribution and generated time are kept in the
+layer metadata. Only public http(s) URLs are accepted; private and link-local
+addresses are blocked.
+
 ## Earthquakes
 
 **Live → Earthquakes** imports the USGS current-day GeoJSON feed, filtered by

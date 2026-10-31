@@ -32,6 +32,7 @@ from .routers import (
     osm_data,
     overlays,
     photos,
+    shares,
     tessera,
     tiles,
     tools,
@@ -232,6 +233,7 @@ app.include_router(layers.router, prefix="/api/v1")
 app.include_router(features.router, prefix="/api/v1")
 app.include_router(uploads.router, prefix="/api/v1")
 app.include_router(photos.router, prefix="/api/v1")
+app.include_router(shares.router, prefix="/api/v1")
 app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(overlays.router, prefix="/api/v1")
 app.include_router(osm_data.router, prefix="/api/v1")

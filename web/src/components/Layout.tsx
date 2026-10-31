@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../api/auth';
 import Icon, { type IconName } from './Icon';
+import ContextHelp from './ContextHelp';
 
 const navItems: { to: string; label: string; end?: boolean; icon: IconName }[] = [
   { to: '/', label: 'Dashboard', end: true, icon: 'dashboard' },
@@ -78,6 +79,7 @@ export default function Layout() {
       </aside>
       <main className="main-area">
         <Outlet />
+        <ContextHelp />
       </main>
     </div>
   );

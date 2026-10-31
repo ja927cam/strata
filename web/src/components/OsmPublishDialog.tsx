@@ -82,6 +82,7 @@ export default function OsmPublishDialog({
   const [radius, setRadius] = useState(50);
   const [selected, setSelected] = useState<NearbyNode | null>(null);
   const [forceCreate, setForceCreate] = useState(false);
+  const [moveNode, setMoveNode] = useState(false);
   const previewSeq = useRef(0);
 
   useEffect(() => {
@@ -97,6 +98,7 @@ export default function OsmPublishDialog({
     osmId: number | undefined = selected?.osm_id,
     createNew = forceCreate,
     tagValues: Record<string, string> = tags,
+    move = moveNode,
   ) {
     const seq = previewSeq.current + 1;
     previewSeq.current = seq;
@@ -112,6 +114,7 @@ export default function OsmPublishDialog({
           tags: tagPayload(tagValues),
           osm_id: osmId,
           force_create: createNew,
+          move_node: move,
         },
       });
       if (seq !== previewSeq.current) return;
@@ -152,8 +155,9 @@ export default function OsmPublishDialog({
     setForceCreate(false);
     setResult(null);
     setConfirmed(false);
+    setMoveNode(false);
     if (selected?.osm_id !== node.osm_id) setTags(initialTags);
-    void runPreview(node.osm_id, false, baseTags);
+    void runPreview(node.osm_id, false, baseTags, false);
   }
 
   function publishAsNew() {
@@ -162,8 +166,9 @@ export default function OsmPublishDialog({
     setNearby(null);
     setResult(null);
     setConfirmed(false);
+    setMoveNode(false);
     setTags(initialTags);
-    void runPreview(undefined, true, initialTags);
+    void runPreview(undefined, true, initialTags, false);
   }
 
   async function publish(dryRun: boolean) {
@@ -179,6 +184,7 @@ export default function OsmPublishDialog({
           tags: tagPayload(),
           osm_id: selected?.osm_id,
           force_create: forceCreate,
+          move_node: moveNode,
           confirm: !dryRun,
           dry_run: dryRun,
         },
@@ -353,7 +359,7 @@ export default function OsmPublishDialog({
         <div className="button-row">
           <button
             className="btn btn-secondary btn-sm"
-            onClick={() => void runPreview(selected?.osm_id, forceCreate)}
+            onClick={() => void runPreview(selected?.osm_id, forceCreate, tags, moveNode)}
             disabled={busy}
           >
             Refresh preview
@@ -370,6 +376,26 @@ export default function OsmPublishDialog({
           </details>
         )}
         {preview && <p className="hint">{preview.warning}</p>}
+        {preview?.osm_id && !forceCreate && (
+          <label className="checkbox-row osm-move">
+            <input
+              type="checkbox"
+              checked={moveNode}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setMoveNode(next);
+                void runPreview(selected?.osm_id, false, tags, next);
+              }}
+            />
+            <span>
+              Move OSM node #{preview.osm_id} to this feature’s coordinates
+              <small>
+                Off by default. The local Strata feature is not changed; only the OSM node
+                location is updated.
+              </small>
+            </span>
+          </label>
+        )}
         {preview && Object.keys(preview.existing_tags || {}).length > 0 && (
           <p className="hint">
             Existing OSM tags are preserved. Edit a value to change it; tags removed here cannot

@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+from shapely.geometry import shape
+from shapely.validation import make_valid
 
 from ..config import settings
 from . import remote
@@ -242,3 +244,71 @@ async def fetch_earthquakes(min_magnitude: float = 2.5) -> list[dict[str, Any]]:
         )
     records.sort(key=lambda item: item["properties"].get("magnitude") or 0, reverse=True)
     return records[:5000]
+
+
+async def fetch_geojson_feed(url: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Fetch a public GeoJSON FeatureCollection and normalise it for a layer."""
+    try:
+        remote.validate_url(url)
+    except remote.UnsafeURLError as exc:
+        raise LiveDataError(str(exc)) from exc
+    try:
+        async with httpx.AsyncClient(
+            timeout=45,
+            follow_redirects=False,
+            headers={"User-Agent": "Strata/1.0 (self-hosted live GeoJSON layer)"},
+        ) as client:
+            response = await client.get(url)
+    except httpx.HTTPError as exc:
+        raise LiveDataError(f"Live feed request failed: {exc}") from exc
+    if response.status_code >= 400:
+        raise LiveDataError(f"Live feed returned HTTP {response.status_code}")
+    if len(response.content) > 25 * 1024 * 1024:
+        raise LiveDataError("Live feed exceeded the 25 MB limit")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise LiveDataError("Live feed did not return JSON") from exc
+    return parse_geojson_payload(payload)
+
+
+def parse_geojson_payload(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if payload.get("type") == "Feature":
+        features = [payload]
+    elif payload.get("type") == "FeatureCollection":
+        features = payload.get("features") or []
+    else:
+        raise LiveDataError("Live feed is not a GeoJSON FeatureCollection")
+
+    records: list[dict[str, Any]] = []
+    skipped = 0
+    for feature in features[:5000]:
+        geometry = feature.get("geometry") if isinstance(feature, dict) else None
+        if not geometry:
+            skipped += 1
+            continue
+        try:
+            geom = shape(geometry)
+            if not geom.is_valid:
+                geom = make_valid(geom)
+        except Exception:  # noqa: BLE001
+            skipped += 1
+            continue
+        if geom.is_empty:
+            skipped += 1
+            continue
+        properties = feature.get("properties")
+        records.append(
+            {
+                "properties": properties if isinstance(properties, dict) else {},
+                "geometry": geom.wkt,
+            }
+        )
+    if not records:
+        raise LiveDataError("Live feed contained no usable GeoJSON features")
+    return records, {"features": len(features), "imported": len(records), "skipped": skipped}
+
+
+async def fetch_geojson_records(url: str) -> list[dict[str, Any]]:
+    records, _ = await fetch_geojson_feed(url)
+    return records

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, download } from '../api/client';
 import { useAuth } from '../api/auth';
@@ -27,6 +27,7 @@ interface Preset {
   description: string;
   attribution: string;
   licence: string;
+  category: string;
   config: Record<string, unknown>;
 }
 
@@ -52,6 +53,8 @@ export default function OverlaysPage() {
   const [overlays, setOverlays] = useState<Layer[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetQuery, setPresetQuery] = useState('');
+  const [presetCategory, setPresetCategory] = useState('all');
   const [loading, setLoading] = useState(true);
   const [presetBusy, setPresetBusy] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -84,6 +87,21 @@ export default function OverlaysPage() {
     void load();
   }, [load]);
 
+  const presetCategories = useMemo(
+    () => Array.from(new Set(presets.map((preset) => preset.category))).sort(),
+    [presets],
+  );
+  const filteredPresets = useMemo(() => {
+    const query = presetQuery.trim().toLowerCase();
+    return presets.filter((preset) => {
+      if (presetCategory !== 'all' && preset.category !== presetCategory) return false;
+      if (!query) return true;
+      return `${preset.label} ${preset.description} ${preset.category}`
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [presets, presetQuery, presetCategory]);
+
   if (!config || loading) return <Spinner full />;
 
   return (
@@ -102,17 +120,42 @@ export default function OverlaysPage() {
       {canEdit && (
       <section className="panel">
         <div className="panel-head">
-          <h2>Quick adds</h2>
+          <h2>Source catalogue</h2>
+          <span className="badge">{presets.length} free sources</span>
         </div>
         <p className="hint">
-          These presets use public services. Check each provider’s terms for production use.
+          One-click reference maps, imagery, terrain and transport overlays. Check each
+          provider’s terms for production use.
         </p>
+        <div className="catalog-tools">
+          <input
+            value={presetQuery}
+            onChange={(e) => setPresetQuery(e.target.value)}
+            placeholder="Search overlays…"
+            aria-label="Search overlay catalogue"
+          />
+          <select
+            value={presetCategory}
+            onChange={(e) => setPresetCategory(e.target.value)}
+            aria-label="Filter overlay category"
+          >
+            <option value="all">All categories</option>
+            {presetCategories.map((category) => (
+              <option key={category} value={category}>
+                {category.charAt(0).toUpperCase() + category.slice(1)}
+              </option>
+            ))}
+          </select>
+          <span className="muted small">{filteredPresets.length} shown</span>
+        </div>
+        <div className="preset-scroll">
         <div className="preset-grid">
-          {presets.map((preset) => (
+          {filteredPresets.map((preset) => (
             <div key={preset.id} className="preset-card">
               <div>
                 <strong>{preset.label}</strong>
                 <p>{preset.description}</p>
+                <small className="preset-category">{preset.category}</small>
               </div>
               <button
                 className="btn btn-secondary btn-xs"
@@ -147,6 +190,7 @@ export default function OverlaysPage() {
               </button>
             </div>
           ))}
+        </div>
         </div>
       </section>
       )}

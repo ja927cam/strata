@@ -11,6 +11,7 @@ import OverlaysPage from './pages/OverlaysPage';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
 import HelpPage from './pages/HelpPage';
+import SharePage from './pages/SharePage';
 import { Spinner } from './components/ui';
 
 function Protected({ children }: { children: JSX.Element }) {
@@ -25,6 +26,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/share/:token" element={<SharePage />} />
       <Route
         path="/"
         element={

@@ -11,6 +11,18 @@ import { ErrorBox, Field, Spinner, formatDate } from '../components/ui';
 
 type BBox = [number, number, number, number];
 
+interface LiveFeed {
+  id: string;
+  label: string;
+  description: string;
+  kind: string;
+  url: string | null;
+  attribution: string;
+  licence: string;
+  category: string;
+  adapter: string;
+}
+
 export default function LivePage() {
   const config = usePublicConfig();
   const { user } = useAuth();
@@ -25,6 +37,16 @@ export default function LivePage() {
   const [grid, setGrid] = useState(3);
   const [minMagnitude, setMinMagnitude] = useState(2.5);
   const [quakeName, setQuakeName] = useState('');
+  const [catalog, setCatalog] = useState<LiveFeed[]>([]);
+  const [feedUrl, setFeedUrl] = useState('');
+  const [feedName, setFeedName] = useState('');
+
+  useEffect(() => {
+    if (!canEdit) return;
+    api<{ sources: LiveFeed[] }>('/live/catalog')
+      .then((data) => setCatalog(data.sources))
+      .catch(() => undefined);
+  }, [canEdit]);
 
   const load = useCallback(async () => {
     try {
@@ -53,6 +75,65 @@ export default function LivePage() {
     () => layers.filter((layer) => layer.metadata?.provider === 'usgs-earthquakes'),
     [layers],
   );
+  const feedLayers = useMemo(
+    () => layers.filter((layer) => layer.metadata?.provider === 'geojson-feed'),
+    [layers],
+  );
+  const addableFeeds = useMemo(
+    () => catalog.filter((feed) => feed.url && feed.kind === 'geojson'),
+    [catalog],
+  );
+
+  async function addFeed(feed: LiveFeed) {
+    if (!feed.url) return;
+    await run(
+      `feed-${feed.id}`,
+      () =>
+        api<Layer>('/live/geojson', {
+          method: 'POST',
+          body: {
+            url: feed.url,
+            name: feed.label,
+            source_id: feed.id,
+            attribution: feed.attribution,
+            licence: feed.licence,
+            visibility: 'private',
+          },
+        }),
+      `${feed.label} added.`,
+    );
+  }
+
+  async function addCustomFeed() {
+    if (!feedUrl.trim()) return;
+    await run(
+      'custom-feed',
+      () =>
+        api<Layer>('/live/geojson', {
+          method: 'POST',
+          body: {
+            url: feedUrl.trim(),
+            name: feedName.trim() || undefined,
+            visibility: 'private',
+          },
+        }),
+      'Live GeoJSON feed added.',
+    );
+    setFeedUrl('');
+    setFeedName('');
+  }
+
+  async function refreshFeed(layer: Layer) {
+    await run(
+      `feed-refresh-${layer.id}`,
+      () =>
+        api<Layer>('/live/geojson/refresh', {
+          method: 'POST',
+          body: { layer_id: layer.id },
+        }),
+      'Live feed refreshed.',
+    );
+  }
 
   async function run(key: string, action: () => Promise<Layer | void>, message: string) {
     setBusy(key);
@@ -335,9 +416,104 @@ export default function LivePage() {
         )}
       </section>
 
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Live feed library</h2>
+          <span className="badge">{addableFeeds.length} one-click feeds</span>
+        </div>
+        <p className="muted">
+          One-click public GeoJSON feeds with no API key. The map stores a snapshot and a
+          Refresh replaces it with the latest observation.
+        </p>
+        {addableFeeds.length > 0 ? (
+          <div className="source-grid">
+            {addableFeeds.map((feed) => (
+              <div key={feed.id} className="source-card">
+                <div className="source-card-head">
+                  <strong>{feed.label}</strong>
+                  <span className="badge">{feed.category}</span>
+                </div>
+                <p>{feed.description}</p>
+                <small>{feed.attribution}</small>
+                <button
+                  className="btn btn-secondary btn-xs"
+                  disabled={busy === `feed-${feed.id}` || !canEdit}
+                  title={canEdit ? undefined : 'Editor access required'}
+                  onClick={() => void addFeed(feed)}
+                >
+                  {busy === `feed-${feed.id}` ? 'Adding…' : 'Add feed'}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="hint">No keyless GeoJSON feeds are currently available on this server.</p>
+        )}
+
+        <details className="advanced-options">
+          <summary>Add a custom GeoJSON feed</summary>
+          <div className="stack" style={{ paddingTop: 10 }}>
+            <Field
+              label="GeoJSON URL"
+              hint="Public HTTPS GeoJSON FeatureCollection. Refreshing replaces this layer’s features."
+            >
+              <input
+                value={feedUrl}
+                onChange={(e) => setFeedUrl(e.target.value)}
+                placeholder="https://example.org/events.geojson"
+              />
+            </Field>
+            <Field label="Layer name">
+              <input
+                value={feedName}
+                onChange={(e) => setFeedName(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={!feedUrl.trim() || busy === 'custom-feed' || !canEdit}
+              onClick={() => void addCustomFeed()}
+            >
+              {busy === 'custom-feed' ? 'Fetching…' : 'Add custom feed'}
+            </button>
+          </div>
+        </details>
+
+        {feedLayers.length > 0 && (
+          <div className="list live-list">
+            {feedLayers.map((layer) => (
+              <div key={layer.id} className="list-row">
+                <Icon name="activity" size={16} />
+                <div className="grow">
+                  <strong>{layer.name}</strong>
+                  <small>
+                    {layer.metadata?.generated_at
+                      ? `Updated ${formatDate(layer.metadata.generated_at)}`
+                      : 'Live GeoJSON feed'}
+                  </small>
+                </div>
+                <button
+                  className="btn btn-ghost btn-xs"
+                  disabled={busy === `feed-refresh-${layer.id}` || !canEdit}
+                  title={canEdit ? undefined : 'Editor access required'}
+                  onClick={() => void refreshFeed(layer)}
+                >
+                  Refresh
+                </button>
+                <Link className="btn btn-ghost btn-xs" to={`/map?layer=${layer.id}`}>
+                  Open
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <p className="hint">
-        Weather: Open-Meteo and RainViewer. Earthquakes: USGS. Respect each provider’s usage terms
-        and attribution; attribution is stored on every layer.
+        Weather: Open-Meteo and RainViewer. Earthquakes: USGS. Other feeds: GDACS, NASA EONET and
+        the US National Weather Service. Respect each provider’s usage terms and attribution;
+        attribution is stored on every layer.
       </p>
     </div>
   );

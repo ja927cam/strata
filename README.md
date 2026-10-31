@@ -136,6 +136,7 @@ For production:
 - [docs/data-import.md](docs/data-import.md) — supported formats and URL sources.
 - [docs/overlays.md](docs/overlays.md) — generic XYZ, TileJSON, WMS and vector-tile overlays.
 - [docs/live-data.md](docs/live-data.md) — live weather radar, weather points and earthquakes.
+- [docs/sharing.md](docs/sharing.md) — named permissions and revocable public links.
 - [docs/tessera.md](docs/tessera.md) — Tessera coverage, import and export.
 - [docs/osm.md](docs/osm.md) — basemaps, OSM PBF import, tiles and publishing.
 - [tiles/README.md](tiles/README.md) — TileServer GL layout and tile generation.

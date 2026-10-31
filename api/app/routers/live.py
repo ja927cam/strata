@@ -20,6 +20,7 @@ from ..models import Feature, Layer
 from ..permissions import get_layer_or_404, require_write
 from ..rate_limit import upload_rate_limit
 from ..services import live
+from ..services.sources import LIVE_FEEDS
 from .layers import serialize_layer
 
 router = APIRouter(prefix="/live", tags=["live"])
@@ -44,6 +45,19 @@ class EarthquakeIn(BaseModel):
     name: str = Field(default="", max_length=200)
     visibility: Literal["private", "organisation", "public"] = "private"
     layer_id: str | None = None
+
+
+class GeoJSONFeedIn(BaseModel):
+    url: str = Field(min_length=8, max_length=4000)
+    name: str = Field(default="", max_length=200)
+    visibility: Literal["private", "organisation", "public"] = "private"
+    attribution: str = Field(default="", max_length=1000)
+    licence: str = Field(default="", max_length=500)
+    source_id: str | None = Field(default=None, max_length=100)
+
+
+class GeoJSONRefreshIn(BaseModel):
+    layer_id: str
 
 
 async def _replace_features(db: AsyncSession, layer: Layer, records: list[dict], user_id) -> int:
@@ -86,6 +100,11 @@ def _new_layer(
         attribution=attribution,
         licence=licence,
     )
+
+
+@router.get("/catalog")
+async def live_catalog(user: EditorUser):
+    return {"sources": LIVE_FEEDS, "count": len(LIVE_FEEDS)}
 
 
 @router.get("/sources")
@@ -202,6 +221,86 @@ async def weather_grid(
         "feature_count": count,
     }
     audit(db, user, "live.weather", "layer", layer.id, {"feature_count": count}, request)
+    await db.commit()
+    await db.refresh(layer)
+    return serialize_layer(layer, "owner")
+
+
+@router.post("/geojson", dependencies=[Depends(upload_rate_limit)])
+async def add_geojson_feed(
+    payload: GeoJSONFeedIn,
+    request: Request,
+    user: EditorUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    try:
+        records, stats = await live.fetch_geojson_feed(payload.url)
+    except live.LiveDataError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    source = next((item for item in LIVE_FEEDS if item["id"] == payload.source_id), None)
+    label = payload.name.strip() or (source or {}).get("label") or "Live GeoJSON feed"
+    layer = _new_layer(
+        user,
+        label,
+        payload.visibility,
+        {"color": "#0f766e", "circleRadius": 5, "fillColor": "#0f766e"},
+        {
+            "provider": "geojson-feed",
+            "source_id": payload.source_id,
+            "source_url": payload.url,
+            "generated_at": datetime.now(UTC).isoformat(),
+        },
+        payload.attribution or (source or {}).get("attribution", ""),
+        payload.licence or (source or {}).get("licence", ""),
+        "geometry",
+    )
+    db.add(layer)
+    await db.flush()
+    count = await _replace_features(db, layer, records, user.id)
+    layer.metadata_ = {
+        **(layer.metadata_ or {}),
+        "generated_at": datetime.now(UTC).isoformat(),
+        "feature_count": count,
+        "feed_stats": stats,
+    }
+    audit(
+        db,
+        user,
+        "live.geojson",
+        "layer",
+        layer.id,
+        {"source_id": payload.source_id, "feature_count": count},
+        request,
+    )
+    await db.commit()
+    await db.refresh(layer)
+    return serialize_layer(layer, "owner")
+
+
+@router.post("/geojson/refresh", dependencies=[Depends(upload_rate_limit)])
+async def refresh_geojson_feed(
+    payload: GeoJSONRefreshIn,
+    request: Request,
+    user: EditorUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    layer = await get_layer_or_404(db, payload.layer_id)
+    await require_write(db, layer, user)
+    url = str((layer.metadata_ or {}).get("source_url") or "")
+    if (layer.metadata_ or {}).get("provider") != "geojson-feed" or not url:
+        raise HTTPException(status_code=422, detail="Layer is not a live GeoJSON feed")
+    try:
+        records, stats = await live.fetch_geojson_feed(url)
+    except live.LiveDataError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    count = await _replace_features(db, layer, records, user.id)
+    layer.metadata_ = {
+        **(layer.metadata_ or {}),
+        "generated_at": datetime.now(UTC).isoformat(),
+        "feature_count": count,
+        "feed_stats": stats,
+    }
+    audit(db, user, "live.geojson_refresh", "layer", layer.id, {"feature_count": count}, request)
     await db.commit()
     await db.refresh(layer)
     return serialize_layer(layer, "owner")
