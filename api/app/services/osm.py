@@ -251,24 +251,32 @@ def osm_change_xml(
     return f'<osmChange version="0.6" generator="Strata"><create>{node}</create></osmChange>'
 
 
-async def fetch_node(osm_id: int, access_token: str | None = None) -> dict[str, Any] | None:
+async def fetch_element(
+    osm_type: str, osm_id: int, access_token: str | None = None
+) -> dict[str, Any] | None:
+    if osm_type not in {"node", "way", "relation"}:
+        raise OSMError(f"Unsupported OSM object type: {osm_type}")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Strata/1.0 (self-hosted OpenStreetMap client)",
+        "User-Agent": "Strata/1.0 (self-hosted; +https://github.com/ja927cam/strata)",
     }
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
-            f"{settings.osm_api_base_url}/api/0.6/node/{osm_id}.json",
+            f"{settings.osm_api_base_url}/api/0.6/{osm_type}/{osm_id}.json",
             headers=headers,
         )
     if response.status_code == 404:
         return None
     if response.status_code >= 400:
-        raise OSMError(f"Could not fetch OSM node {osm_id}: HTTP {response.status_code}")
+        raise OSMError(f"Could not fetch OSM {osm_type} {osm_id}: HTTP {response.status_code}")
     elements = response.json().get("elements", [])
     return elements[0] if elements else None
+
+
+async def fetch_node(osm_id: int, access_token: str | None = None) -> dict[str, Any] | None:
+    return await fetch_element("node", osm_id, access_token)
 
 
 async def fetch_node_version(access_token: str, osm_id: int) -> dict[str, Any] | None:
@@ -310,16 +318,20 @@ async def upload_diff(access_token: str, changeset_id: int, diff_xml: str) -> di
     result: dict[str, Any] = {"raw": response.text}
     try:
         root = ET.fromstring(response.text)
-        nodes = []
-        for node in root.iter("node"):
-            nodes.append(
+        elements = []
+        for element in root:
+            if element.tag not in {"node", "way", "relation"}:
+                continue
+            elements.append(
                 {
-                    "old_id": node.get("old_id"),
-                    "new_id": node.get("new_id"),
-                    "new_version": node.get("new_version"),
+                    "type": element.tag,
+                    "old_id": element.get("old_id"),
+                    "new_id": element.get("new_id"),
+                    "new_version": element.get("new_version"),
                 }
             )
-        result["nodes"] = nodes
+        result["elements"] = elements
+        result["nodes"] = [item for item in elements if item["type"] == "node"]
     except ET.ParseError:
         pass
     return result
@@ -348,6 +360,43 @@ def parse_lat_lon(geometry: dict[str, Any]) -> tuple[float, float]:
     if not (-180 <= lon <= 180 and -90 <= lat <= 90):
         raise HTTPException(status_code=422, detail="Coordinates are outside WGS84 ranges")
     return lat, lon
+
+
+def object_change_xml(
+    *,
+    osm_type: str,
+    osm_id: int,
+    osm_version: int,
+    tags: dict[str, str],
+    nodes: list[int] | None = None,
+    members: list[dict[str, Any]] | None = None,
+    changeset_id: int | None = None,
+) -> str:
+    tag_xml = "".join(
+        f"<tag k={quoteattr(str(k))} v={quoteattr(str(v))}/>"
+        for k, v in tags.items()
+        if k and str(v).strip()
+    )
+    changeset_attr = f' changeset="{int(changeset_id)}"' if changeset_id else ""
+    if osm_type == "way":
+        body = "".join(f'<nd ref="{int(ref)}"/>' for ref in (nodes or []))
+        element = (
+            f'<way id="{int(osm_id)}" version="{int(osm_version)}"{changeset_attr}>'
+            f"{body}{tag_xml}</way>"
+        )
+    elif osm_type == "relation":
+        body = "".join(
+            f"<member type={quoteattr(str(member['type']))} "
+            f'ref="{int(member["ref"])}" role={quoteattr(str(member.get("role") or ""))}/>'
+            for member in (members or [])
+        )
+        element = (
+            f'<relation id="{int(osm_id)}" version="{int(osm_version)}"{changeset_attr}>'
+            f"{body}{tag_xml}</relation>"
+        )
+    else:
+        raise OSMError("object_change_xml only supports ways and relations")
+    return f'<osmChange version="0.6" generator="Strata"><modify>{element}</modify></osmChange>'
 
 
 def escape_xml_text(value: str) -> str:

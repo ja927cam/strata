@@ -50,6 +50,8 @@ export default function OsmPublishDialog({
   onClose: () => void;
   onPublished: () => void;
 }) {
+  const isPoint = feature.geometry?.type === 'Point';
+
   const initialTags = useMemo(() => {
     const tags: Record<string, string> = {};
     for (const [key, value] of Object.entries(feature.properties || {})) {
@@ -206,85 +208,93 @@ export default function OsmPublishDialog({
           account. Review the tags, geometry and changeset comment before confirming.
         </div>
 
-        <section className="osm-match">
-          <div className="osm-match-head">
-            <div>
-              <h3>Attach to an existing OSM point</h3>
-              <p className="hint">
-                Find a nearby OpenStreetMap point and add your data to it instead of creating a
-                duplicate. Photos and files stay attached in Strata; OSM stores text tags only.
-              </p>
-            </div>
-            {preview?.osm_id && !selected && (
-              <span className="badge badge-info">Linked to node #{preview.osm_id}</span>
-            )}
-          </div>
-          <div className="osm-search-row">
-            <select
-              value={radius}
-              onChange={(e) => setRadius(Number(e.target.value))}
-              aria-label="Search radius"
-            >
-              <option value={10}>Within 10 m</option>
-              <option value={25}>Within 25 m</option>
-              <option value={50}>Within 50 m</option>
-              <option value={100}>Within 100 m</option>
-              <option value={200}>Within 200 m</option>
-            </select>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => void findNearby()}
-              disabled={searching}
-            >
-              {searching ? 'Searching…' : 'Find nearby OSM points'}
-            </button>
-          </div>
-          {nearby && nearby.length > 0 && (
-            <div className="osm-nodes">
-              {nearby.map((node) => (
-                <button
-                  key={node.osm_id}
-                  type="button"
-                  className={`osm-node ${selected?.osm_id === node.osm_id ? 'selected' : ''}`}
-                  onClick={() => attachTo(node)}
-                >
-                  <span className="osm-node-main">
-                    <strong>{node.name || `OSM node ${node.osm_id}`}</strong>
-                    <small>
-                      {node.distance_m.toFixed(1)} m away · node #{node.osm_id}
-                    </small>
-                  </span>
-                  <span className="osm-node-tags">
-                    {Object.entries(node.tags)
-                      .slice(0, 3)
-                      .map(([key, value]) => `${key}=${value}`)
-                      .join(' · ')}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {selected && (
-            <div className="osm-selected">
+        {isPoint ? (
+          <section className="osm-match">
+            <div className="osm-match-head">
               <div>
-                <strong>
-                  {selected.name || `OSM node ${selected.osm_id}`} will be updated
-                </strong>
-                <small>
-                  Existing OSM tags are kept; the OSM point stays at its current position.
-                </small>
+                <h3>Attach to an existing OSM point</h3>
+                <p className="hint">
+                  Find a nearby OpenStreetMap point and add your data to it instead of creating a
+                  duplicate. Photos and files stay attached in Strata; OSM stores text tags only.
+                </p>
               </div>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={publishAsNew}>
-                Create a new point instead
+              {preview?.osm_id && !selected && (
+                <span className="badge badge-info">Linked to node #{preview.osm_id}</span>
+              )}
+            </div>
+            <div className="osm-search-row">
+              <select
+                value={radius}
+                onChange={(e) => setRadius(Number(e.target.value))}
+                aria-label="Search radius"
+              >
+                <option value={10}>Within 10 m</option>
+                <option value={25}>Within 25 m</option>
+                <option value={50}>Within 50 m</option>
+                <option value={100}>Within 100 m</option>
+                <option value={200}>Within 200 m</option>
+              </select>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void findNearby()}
+                disabled={searching}
+              >
+                {searching ? 'Searching…' : 'Find nearby OSM points'}
               </button>
             </div>
-          )}
-          <p className="hint">
-            To publish a photo link, add an <code>image</code> tag with a publicly reachable URL.
-            The original photo remains attached to this Strata feature.
-          </p>
-        </section>
+            {nearby && nearby.length > 0 && (
+              <div className="osm-nodes">
+                {nearby.map((node) => (
+                  <button
+                    key={node.osm_id}
+                    type="button"
+                    className={`osm-node ${selected?.osm_id === node.osm_id ? 'selected' : ''}`}
+                    onClick={() => attachTo(node)}
+                  >
+                    <span className="osm-node-main">
+                      <strong>{node.name || `OSM node ${node.osm_id}`}</strong>
+                      <small>
+                        {node.distance_m.toFixed(1)} m away · node #{node.osm_id}
+                      </small>
+                    </span>
+                    <span className="osm-node-tags">
+                      {Object.entries(node.tags)
+                        .slice(0, 3)
+                        .map(([key, value]) => `${key}=${value}`)
+                        .join(' · ')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {selected && (
+              <div className="osm-selected">
+                <div>
+                  <strong>
+                    {selected.name || `OSM node ${selected.osm_id}`} will be updated
+                  </strong>
+                  <small>
+                    Existing OSM tags are kept; the OSM point stays at its current position.
+                  </small>
+                </div>
+                <button type="button" className="btn btn-ghost btn-xs" onClick={publishAsNew}>
+                  Create a new point instead
+                </button>
+              </div>
+            )}
+            <p className="hint">
+              To publish a photo link, add an <code>image</code> tag with a publicly reachable
+              URL. The original photo remains attached to this Strata feature.
+            </p>
+          </section>
+        ) : (
+          <div className="warning-box">
+            This is an OSM {preview?.osm_type || 'object'}. Publishing updates its tags only;
+            local geometry changes are not uploaded. Use a point feature to edit an OSM node’s
+            position.
+          </div>
+        )}
 
         {preview && (
           <div className="grid-2">
@@ -376,7 +386,7 @@ export default function OsmPublishDialog({
           </details>
         )}
         {preview && <p className="hint">{preview.warning}</p>}
-        {preview?.osm_id && !forceCreate && (
+        {isPoint && preview?.osm_id && !forceCreate && (
           <label className="checkbox-row osm-move">
             <input
               type="checkbox"

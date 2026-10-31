@@ -190,8 +190,11 @@ Use throwaway dev accounts.
 
 ## Publishing a feature
 
-Publishing supports **point nodes** in this release. You can create a new node,
-or attach a Strata point to an existing OSM node and update its tags.
+Publishing supports new **point nodes**, existing **nodes**, and tag-only updates
+to existing **ways and relations**. You can attach a Strata point to a nearby
+OSM node, or edit an imported OSM way/building and publish its tags. Node
+positions can optionally be moved to the Strata point; way/relation geometry is
+never replaced by the local copy.
 
 UI flow:
 
@@ -231,9 +234,11 @@ changeset and records the error in `app.osm_publications`.
   checkbox and a non-empty changeset comment.
 - Only tags the user reviewed are sent. Internal properties (`_nasmap*`,
   `osm_*`, `photo_*`, `exif_*`, `camera_*`, `geometry_wkt`) are excluded.
-- When updating an existing node, current OSM tags are fetched and kept.
+- When updating an existing object, current OSM tags are fetched and kept.
   Deleting existing tags is not supported in this version; edit values or add
   new tags.
+- Way/relation publishing is **tag-only**. The current OSM nodes/members are
+  preserved; local geometry is not uploaded for those object types.
 - Do not upload data that violates OSM’s licence or community guidelines.
 - Use the dev server before testing against production OSM.
 

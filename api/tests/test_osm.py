@@ -113,8 +113,8 @@ def test_nearby_query_is_bounded():
 
 
 def test_prepare_attaches_to_existing_node_and_keeps_tags(monkeypatch):
-    async def fake_fetch(osm_id, access_token=None):
-        assert osm_id == 123
+    async def fake_fetch(osm_type, osm_id, access_token=None):
+        assert (osm_type, osm_id) == ("node", 123)
         return {
             "type": "node",
             "id": 123,
@@ -124,7 +124,7 @@ def test_prepare_attaches_to_existing_node_and_keeps_tags(monkeypatch):
             "tags": {"amenity": "cafe", "name": "Old name"},
         }
 
-    monkeypatch.setattr(osm, "fetch_node", fake_fetch)
+    monkeypatch.setattr(osm, "fetch_element", fake_fetch)
     feature = Feature(properties={"name": "New name", "photo_filename": "secret.jpg"})
     payload = osm_router.PreviewIn(
         feature_id=uuid4(),
@@ -132,9 +132,10 @@ def test_prepare_attaches_to_existing_node_and_keeps_tags(monkeypatch):
         tags={"name": "New name"},
         osm_id=123,
     )
-    tags, _, diff, osm_id, version, existing, lat, lon = asyncio.run(
+    tags, _, diff, osm_type, osm_id, version, existing, lat, lon = asyncio.run(
         osm_router._prepare(feature, payload, {"type": "Point", "coordinates": [0, 0]})
     )
+    assert osm_type == "node"
     assert osm_id == 123
     assert version == 7
     assert tags == {"amenity": "cafe", "name": "New name"}
@@ -143,3 +144,18 @@ def test_prepare_attaches_to_existing_node_and_keeps_tags(monkeypatch):
     assert 'id="123"' in diff
     assert 'version="7"' in diff
     assert "secret.jpg" not in diff
+
+
+def test_object_change_xml_preserves_way_nodes():
+    xml = osm.object_change_xml(
+        osm_type="way",
+        osm_id=55,
+        osm_version=9,
+        tags={"highway": "residential", "surface": "asphalt"},
+        nodes=[101, 102, 103],
+        changeset_id=7,
+    )
+    assert 'id="55"' in xml
+    assert 'version="9"' in xml
+    assert 'nd ref="101"' in xml
+    assert "surface" in xml

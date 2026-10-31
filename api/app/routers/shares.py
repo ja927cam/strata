@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -169,8 +169,13 @@ async def revoke_share_link(
 
 
 @router.get("/public/shares/{token}")
-async def public_share(token: str, db: Annotated[AsyncSession, Depends(get_db)]):
+async def public_share(
+    token: str,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
     link, layer, owner = await _active_link(db, token)
+    response.headers["Cache-Control"] = "no-store"
     return {
         "token": token,
         "layer": _public_layer(layer, owner),
@@ -182,6 +187,7 @@ async def public_share(token: str, db: Annotated[AsyncSession, Depends(get_db)])
 @router.get("/public/shares/{token}/features")
 async def public_share_features(
     token: str,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
     bbox: str | None = None,
     q: str | None = None,
@@ -189,6 +195,7 @@ async def public_share_features(
     offset: int = 0,
 ):
     _, layer, _ = await _active_link(db, token)
+    response.headers["Cache-Control"] = "no-store"
     limit = max(1, min(limit, 20000))
     offset = max(0, offset)
     conditions = [Feature.layer_id == layer.id, Feature.deleted_at.is_(None)]

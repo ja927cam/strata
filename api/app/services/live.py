@@ -256,7 +256,7 @@ async def fetch_geojson_feed(url: str) -> tuple[list[dict[str, Any]], dict[str, 
         async with httpx.AsyncClient(
             timeout=45,
             follow_redirects=False,
-            headers={"User-Agent": "Strata/1.0 (self-hosted live GeoJSON layer)"},
+            headers={"User-Agent": "Strata/1.0 (self-hosted; +https://github.com/ja927cam/strata)"},
         ) as client:
             response = await client.get(url)
     except httpx.HTTPError as exc:
@@ -294,7 +294,14 @@ def parse_geojson_payload(payload: dict[str, Any]) -> tuple[list[dict[str, Any]]
         except Exception:  # noqa: BLE001
             skipped += 1
             continue
-        if geom.is_empty:
+        if geom.is_empty or geom.geom_type not in {
+            "Point",
+            "MultiPoint",
+            "LineString",
+            "MultiLineString",
+            "Polygon",
+            "MultiPolygon",
+        }:
             skipped += 1
             continue
         properties = feature.get("properties")

@@ -553,6 +553,16 @@ export default function MapPage() {
               </button>
             </>
           )}
+          {selectedFeature &&
+            activeLayer &&
+            (selectedFeature.geometry?.type === 'Point' || osmLayer) && (
+              <button
+                className="btn btn-primary btn-xs"
+                onClick={() => setOsmFeature(selectedFeature)}
+              >
+                Publish to OSM
+              </button>
+            )}
           {activeLayer && ['raster', 'table'].includes(activeLayer.geometry_type) && (
             <button className="btn btn-ghost btn-xs" onClick={() => void fitLayer(activeLayer)}>
               Zoom to layer

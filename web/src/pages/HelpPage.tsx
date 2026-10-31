@@ -128,7 +128,8 @@ export default function HelpPage() {
           </li>
           <li>
             Use <em>Find nearby OSM points</em> to attach your data to an existing OSM node
-            instead of creating a duplicate. Existing OSM tags are kept.
+            instead of creating a duplicate. Existing OSM tags are kept. Imported OSM ways and
+            areas can publish tag-only updates; their geometry stays as it is on OSM.
           </li>
           <li>
             Review the tags, run a dry run, then confirm. Photos stay attached here; OSM stores

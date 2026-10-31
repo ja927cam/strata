@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from shapely.geometry import shape as shapely_shape
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,7 +58,7 @@ class PublishIn(PreviewIn):
 
 
 async def _load_feature(
-    db: AsyncSession, feature_id: UUID, user: User
+    db: AsyncSession, feature_id: UUID, user: User, require_point: bool = False
 ) -> tuple[Feature, Layer, dict, tuple[float, float]]:
     feature = await db.get(Feature, feature_id)
     if not feature or feature.deleted_at is not None:
@@ -68,40 +69,84 @@ async def _load_feature(
     if not geometry_json:
         raise HTTPException(status_code=422, detail="Feature has no geometry")
     geometry = json.loads(geometry_json)
-    lat, lon = osm_service.parse_lat_lon(geometry)
+    if require_point:
+        lat, lon = osm_service.parse_lat_lon(geometry)
+    else:
+        try:
+            centroid = shapely_shape(geometry).centroid
+            lat, lon = float(centroid.y), float(centroid.x)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=422, detail=f"Feature has invalid geometry: {exc}"
+            ) from exc
     return feature, layer, geometry, (lat, lon)
 
 
 async def _prepare(
     feature: Feature, payload: PreviewIn, geometry: dict[str, Any]
-) -> tuple[dict[str, str], str, str, int | None, int | None, dict[str, str], float, float]:
+) -> tuple[
+    dict[str, str],
+    str,
+    str,
+    str,
+    int | None,
+    int | None,
+    dict[str, str],
+    float,
+    float,
+]:
     props = feature.properties or {}
+    stored_type = str(props.get("osm_type") or "node")
+    if stored_type not in {"node", "way", "relation"}:
+        stored_type = "node"
+    osm_type = stored_type
     osm_id: int | None = None
     osm_version: int | None = None
     existing_tags: dict[str, str] = {}
-    node: dict[str, Any] | None = None
-    if payload.osm_type not in (None, "node"):
-        raise HTTPException(status_code=422, detail="Only OSM nodes are supported")
-    if not payload.force_create:
+    nodes: list[int] | None = None
+    members: list[dict[str, Any]] | None = None
+    if payload.force_create:
+        osm_id = None
+        osm_type = "node"
+    else:
         if payload.osm_id:
             osm_id = payload.osm_id
+            osm_type = payload.osm_type or "node"
         elif props.get("osm_id"):
             try:
                 osm_id = int(props["osm_id"])
             except (TypeError, ValueError):
                 raise HTTPException(status_code=422, detail="Stored osm_id is invalid") from None
     if osm_id:
-        node = await osm_service.fetch_node(osm_id)
-        if not node:
-            raise HTTPException(status_code=404, detail="OSM node no longer exists")
-        if payload.move_node:
-            lat, lon = osm_service.parse_lat_lon(geometry)
+        current = await osm_service.fetch_element(osm_type, osm_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="OSM object no longer exists")
+        osm_version = int(current.get("version") or 1)
+        existing_tags = osm_service.clean_tags(current.get("tags") or {})
+        if osm_type == "node":
+            if payload.move_node:
+                lat, lon = osm_service.parse_lat_lon(geometry)
+            else:
+                lat = float(current["lat"])
+                lon = float(current["lon"])
         else:
-            lat = float(node["lat"])
-            lon = float(node["lon"])
-        osm_version = int(node.get("version") or 1)
-        existing_tags = osm_service.clean_tags(node.get("tags") or {})
+            nodes = (
+                [int(ref) for ref in (current.get("nodes") or [])] if osm_type == "way" else None
+            )
+            members = current.get("members") if osm_type == "relation" else None
+            try:
+                centroid = shapely_shape(geometry).centroid
+                lat, lon = float(centroid.y), float(centroid.x)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=422, detail=f"Feature has invalid geometry: {exc}"
+                ) from exc
     else:
+        if stored_type != "node" or (props.get("osm_id") and not payload.force_create):
+            raise HTTPException(
+                status_code=422,
+                detail="New OpenStreetMap objects must be point nodes",
+            )
         lat, lon = osm_service.parse_lat_lon(geometry)
     local_tags = osm_service.clean_tags(payload.tags if payload.tags is not None else props)
     tags = osm_service.merge_tags(existing_tags, local_tags)
@@ -110,10 +155,20 @@ async def _prepare(
     changeset_xml = osm_service.changeset_xml(
         payload.comment, payload.source, payload.changeset_tags
     )
-    diff_xml = osm_service.osm_change_xml(
-        lat=lat, lon=lon, tags=tags, osm_id=osm_id, osm_version=osm_version
-    )
-    return tags, changeset_xml, diff_xml, osm_id, osm_version, existing_tags, lat, lon
+    if osm_type == "node":
+        diff_xml = osm_service.osm_change_xml(
+            lat=lat, lon=lon, tags=tags, osm_id=osm_id, osm_version=osm_version
+        )
+    else:
+        diff_xml = osm_service.object_change_xml(
+            osm_type=osm_type,
+            osm_id=int(osm_id or 0),
+            osm_version=int(osm_version or 1),
+            tags=tags,
+            nodes=nodes,
+            members=members,
+        )
+    return tags, changeset_xml, diff_xml, osm_type, osm_id, osm_version, existing_tags, lat, lon
 
 
 @router.get("/status")
@@ -292,7 +347,7 @@ async def nearby(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    _, _, _, (lat, lon) = await _load_feature(db, payload.feature_id, user)
+    _, _, _, (lat, lon) = await _load_feature(db, payload.feature_id, user, require_point=True)
     try:
         nodes = await overpass.fetch_nearby_nodes(lat, lon, payload.radius_m)
     except overpass.OverpassError as exc:
@@ -311,14 +366,22 @@ async def preview(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     feature, layer, geometry, _ = await _load_feature(db, payload.feature_id, user)
-    tags, changeset_xml, diff_xml, osm_id, osm_version, existing_tags, lat, lon = await _prepare(
-        feature, payload, geometry
-    )
+    (
+        tags,
+        changeset_xml,
+        diff_xml,
+        osm_type,
+        osm_id,
+        osm_version,
+        existing_tags,
+        lat,
+        lon,
+    ) = await _prepare(feature, payload, geometry)
     return {
         "feature_id": str(feature.id),
         "layer_id": str(layer.id),
         "action": "modify" if osm_id else "create",
-        "osm_type": "node",
+        "osm_type": osm_type,
         "osm_id": osm_id,
         "osm_version": osm_version,
         "lat": lat,
@@ -355,7 +418,7 @@ async def publish(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     feature, layer, geometry, _ = await _load_feature(db, payload.feature_id, user)
-    tags, changeset_xml, diff_xml, osm_id, osm_version, _, lat, lon = await _prepare(
+    tags, changeset_xml, diff_xml, osm_type, osm_id, osm_version, _, lat, lon = await _prepare(
         feature, payload, geometry
     )
     publication = OsmPublication(
@@ -400,24 +463,42 @@ async def publish(
     changeset_id: int | None = None
     try:
         if osm_id and (not osm_version or osm_version < 1):
-            current = await osm_service.fetch_node_version(access_token, osm_id)
+            current = await osm_service.fetch_element(osm_type, osm_id, access_token)
             if not current:
-                raise HTTPException(status_code=404, detail="OSM node no longer exists")
+                raise HTTPException(status_code=404, detail="OSM object no longer exists")
             osm_version = int(current.get("version", 1))
-            diff_xml = osm_service.osm_change_xml(
-                lat=lat, lon=lon, tags=tags, osm_id=osm_id, osm_version=osm_version
+
+        object_current = None
+        if osm_type != "node":
+            object_current = await osm_service.fetch_element(
+                osm_type, int(osm_id or 0), access_token
             )
-            publication.diff_xml = diff_xml
+            if not object_current:
+                raise HTTPException(status_code=404, detail="OSM object no longer exists")
 
         changeset_id = await osm_service.create_changeset(access_token, changeset_xml)
-        diff_xml = osm_service.osm_change_xml(
-            lat=lat,
-            lon=lon,
-            tags=tags,
-            osm_id=osm_id,
-            osm_version=osm_version,
-            changeset_id=changeset_id,
-        )
+        if osm_type == "node":
+            diff_xml = osm_service.osm_change_xml(
+                lat=lat,
+                lon=lon,
+                tags=tags,
+                osm_id=osm_id,
+                osm_version=osm_version,
+                changeset_id=changeset_id,
+            )
+        else:
+            current = object_current or {}
+            diff_xml = osm_service.object_change_xml(
+                osm_type=osm_type,
+                osm_id=int(osm_id or 0),
+                osm_version=int(osm_version or 1),
+                tags=tags,
+                nodes=[int(ref) for ref in (current or {}).get("nodes") or []]
+                if osm_type == "way"
+                else None,
+                members=(current or {}).get("members") if osm_type == "relation" else None,
+                changeset_id=changeset_id,
+            )
         publication.diff_xml = diff_xml
         result = await osm_service.upload_diff(access_token, changeset_id, diff_xml)
         await osm_service.close_changeset(access_token, changeset_id)
@@ -425,19 +506,22 @@ async def publish(
         publication.status = "published"
         publication.response = result
         publication.finished_at = datetime.now(UTC)
-        new_nodes = result.get("nodes") or []
-        node = new_nodes[0] if new_nodes else {}
-        resolved_id = int(node.get("new_id") or node.get("old_id") or osm_id or 0)
-        resolved_version = int(node.get("new_version") or osm_version or 0)
+        returned = result.get("elements") or []
+        matching = next(
+            (item for item in returned if item.get("type") == osm_type),
+            returned[0] if returned else {},
+        )
+        resolved_id = int(matching.get("new_id") or matching.get("old_id") or osm_id or 0)
+        resolved_version = int(matching.get("new_version") or osm_version or 0)
         if resolved_id:
             feature.properties = {
                 **(feature.properties or {}),
-                "osm_type": "node",
+                "osm_type": osm_type,
                 "osm_id": resolved_id,
                 **({"osm_version": resolved_version} if resolved_version else {}),
                 "osm_changeset": changeset_id,
             }
-        publication.osm_type = "node"
+        publication.osm_type = osm_type
         publication.osm_id = resolved_id or osm_id
         feature.updated_by = user.id
         audit(

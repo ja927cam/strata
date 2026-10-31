@@ -273,7 +273,7 @@ export default function FeaturePanel({
           <button className="btn btn-danger btn-sm" onClick={onDelete} disabled={busy}>
             Delete
           </button>
-          {feature.geometry?.type === 'Point' && (
+          {(feature.geometry?.type === 'Point' || feature.properties?.osm_id) && (
             <button className="btn btn-secondary btn-sm" onClick={onOsm}>
               Attach / publish to OSM
             </button>
