@@ -118,7 +118,7 @@ async def create_share_link(
         "share.create",
         "layer",
         layer.id,
-        {"share_link_id": str(link.id), "expires_at": link.expires_at},
+        {"share_link_id": str(link.id), "expires_at": link.expires_at.isoformat()},
         request,
     )
     await db.commit()
